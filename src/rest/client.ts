@@ -53,13 +53,28 @@ function headers(apiKey?: string, body = false): Record<string, string> {
   return h;
 }
 
+/**
+ * Clés d'identifiants 64 bits que l'API renvoie en **entiers JSON** : au-delà de 2^53, `JSON.parse`
+ * les corromprait (ex. `id` d'ordre `2061434534138703872` → `…704000`, donc cancel sur un mauvais id).
+ * On **re-cite** leurs littéraux entiers (≥ 16 chiffres) avant le parse pour les conserver en chaînes.
+ */
+const BIG_INT_ID_KEYS = ['id', 'orderId', 'externalId', 'accountId'];
+
+/** Re-cite les littéraux entiers longs des clés id pour préserver la précision 64 bits. */
+function quoteBigIntIds(json: string): string {
+  const keys = BIG_INT_ID_KEYS.join('|');
+  // `"id":1234567890123456789` (≥ 16 chiffres, non déjà entre guillemets) → `"id":"1234…"`.
+  const re = new RegExp(`("(?:${keys})"\\s*:\\s*)(\\d{16,})`, 'g');
+  return json.replace(re, '$1"$2"');
+}
+
 /** Parse l'enveloppe `{status,data,error}` Extended (parsing défensif, erreurs typées). */
 function parseEnvelope<T>(response: Response): Promise<ExtendedEnvelope<T>> {
   return response.text().then((body) => {
     let parsed: ExtendedEnvelope<T> | null = null;
     if (body !== '') {
       try {
-        parsed = JSON.parse(body) as ExtendedEnvelope<T>;
+        parsed = JSON.parse(quoteBigIntIds(body)) as ExtendedEnvelope<T>;
       } catch {
         parsed = null;
       }

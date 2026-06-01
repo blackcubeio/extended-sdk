@@ -45,31 +45,69 @@ export function msToDate(ms: number): string {
   return new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
 }
 
+/** Compte les décimales d'une résolution puissance de 10 (`1e6` → `6`). */
+function resolutionDecimals(resolution: number): number {
+  return Math.round(Math.log10(resolution));
+}
+
+/** Décompose une chaîne décimale signée en `{ negative, digits, scale }` (entier `digits·10^-scale`). */
+function parseDecimal(value: string): { negative: boolean; digits: bigint; scale: number } {
+  const negative = value.startsWith('-');
+  const abs = negative ? value.slice(1) : value;
+  const [intPart, fracPart = ''] = abs.split('.');
+  const digits = BigInt(`${intPart === '' ? '0' : intPart}${fracPart}`);
+  return { negative, digits, scale: fracPart.length };
+}
+
 /**
- * Convertit une valeur décimale (chaîne) en **entier StarkEx scalé** par `resolution` (cf.
- * `Asset.convert_human_readable_to_stark_quantity` : `value * resolution`, arrondi). `resolution`
- * est `syntheticResolution` / `collateralResolution` du `l2Config` du marché (ex. `1e6`).
+ * Reproduit **exactement** `convert_human_readable_to_stark_quantity` du SDK Python : multiplie une
+ * **chaîne décimale** par une `resolution` (puissance de 10) et arrondit en entier StarkEx. Tout le
+ * calcul est en `BigInt` (zéro flottant) pour éviter la dérive de précision (ex. `0.0005*3.6` qui en
+ * `Number` vaut `0.0018000000000000002` et casserait l'arrondi du `fee_amount`, donc la signature).
  *
- * `rounding` : `'up'` (achat/fee) ou `'down'` (vente), pour reproduire les contextes d'arrondi du
- * SDK Python (`ROUNDING_BUY_CONTEXT`/`ROUNDING_SELL_CONTEXT`/`ROUNDING_FEE_CONTEXT`). Le calcul se
- * fait en **arithmétique entière** (BigInt) pour éviter toute perte de précision flottante.
+ * `rounding` : `'up'` (achat/fee) ou `'down'` (vente), miroir des contextes Python
+ * (`ROUNDING_BUY_CONTEXT`/`ROUNDING_SELL_CONTEXT`/`ROUNDING_FEE_CONTEXT`).
  */
 export function scaleToStark(
   value: string,
   resolution: number,
   rounding: 'up' | 'down' = 'down',
 ): bigint {
-  const negative = value.startsWith('-');
-  const abs = negative ? value.slice(1) : value;
-  // resolution est une puissance de 10 (1eN) ; on compte ses décimales.
-  const decimals = Math.round(Math.log10(resolution));
-  const [intPart, fracPart = ''] = abs.split('.');
-  const fracPadded = `${fracPart}${'0'.repeat(decimals)}`;
-  const kept = fracPadded.slice(0, decimals);
-  const dropped = fracPadded.slice(decimals);
-  let q = BigInt(`${intPart}${kept}`);
-  // Arrondi sur la partie tronquée (ROUND_UP si reste non nul, sinon ROUND_DOWN/exact).
-  if (rounding === 'up' && /[1-9]/.test(dropped)) {
+  return scaleProductToStark([value], resolution, rounding);
+}
+
+/**
+ * Variante : scale le **produit** de plusieurs chaînes décimales (ex. `size × price` pour le
+ * collatéral, `fee × size × price` pour les frais) par `resolution`, en arithmétique entière exacte.
+ * Le signe est porté hors de la magnitude ; l'arrondi (`up`/`down`) s'applique sur la troncature.
+ */
+export function scaleProductToStark(
+  values: string[],
+  resolution: number,
+  rounding: 'up' | 'down' = 'down',
+): bigint {
+  let negative = false;
+  let numerator = 1n; // produit des magnitudes (digits)
+  let totalScale = 0; // somme des décimales des facteurs
+  for (const value of values) {
+    const parsed = parseDecimal(value);
+    negative = negative !== parsed.negative;
+    numerator *= parsed.digits;
+    totalScale += parsed.scale;
+  }
+  // numerator · 10^-totalScale · 10^decimals = numerator · 10^(decimals-totalScale)
+  const decimals = resolutionDecimals(resolution);
+  const shift = decimals - totalScale;
+  let q: bigint;
+  let hasRemainder = false;
+  if (shift >= 0) {
+    q = numerator * 10n ** BigInt(shift);
+  } else {
+    const divisor = 10n ** BigInt(-shift);
+    q = numerator / divisor;
+    hasRemainder = numerator % divisor !== 0n;
+  }
+  if (rounding === 'up' && hasRemainder) {
     q += 1n;
   }
   return negative ? -q : q;

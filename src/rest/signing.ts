@@ -14,31 +14,28 @@ import {
 import type { Network } from '../common/types';
 
 /**
- * Signature **StarkEx perpetual** Extended (ex-X10), reproduite **fidèlement** depuis le SDK Python
- * officiel `x10xchange/python_sdk` (`x10/signing/*.py`) et la lib Rust `fast_stark_crypto`. Les
- * fonctions `get_order_msg_hash` / `get_withdrawal_msg_hash` / `get_transfer_msg_hash` du Rust
- * calculent un **hash SNIP-12 révision 1** (Poseidon) sur une struct typée du contrat Perpetuals.
+ * Signature **StarkEx perpetual** Extended (ex-X10), reproduite **fidèlement** depuis la lib Rust
+ * officielle `fast_stark_crypto` (`rust-crypto-lib-base/src/starknet_messages.rs`, utilisée par le SDK
+ * Python `x10xchange/python_sdk` via `get_order_msg_hash` &al.). Les structs `Order`/`LimitOrder`/
+ * `TransferArgs`/`WithdrawArgs` sont hachées en **SNIP-12 révision 1** (Poseidon) puis enveloppées
+ * `poseidon(['StarkNet Message', domain_hash, public_key, struct_hash])`.
  *
- * ⚠️ **À VALIDER AU BIT PRÈS SUR TESTNET.** Le hash ci-dessous est une **reproduction JS pure** (via
- * `@scure/starknet`, Poseidon + sign) de l'encodage SNIP-12 rev-1. Les **type-hashes** (sélecteurs de
- * type) et l'**ordre exact des champs** des structs `Order`/`TransferArgs`/`WithdrawArgs` du contrat
- * StarkWare Perpetuals doivent être confirmés contre une signature de référence produite par le SDK
- * Python officiel (ou le signer WASM `stark-crypto-wrapper-js`). Tant que ce n'est pas confirmé,
- * **NE PAS** considérer la signature comme correcte : voir {@link signMsgHash} et le hook WASM en bas.
- *
- * Si la repro JS ne reproduit pas le hash, on bascule sur le **signer WASM officiel** (modèle Lighter,
- * cf. note `setStarkSigner`) sans changer la surface des fonctions REST.
+ * ✅ **VALIDÉ AU BIT PRÈS** contre `fast_stark_crypto` 0.5.0 : les 4 sélecteurs SNIP-12, le hash de
+ * domaine `SN_SEPOLIA`, le hash d'ordre (montants positifs et négatifs, clé publique 251 bits) et la
+ * signature ECDSA `(r,s)` reproduisent exactement la référence Rust/Python (vecteurs de test de
+ * `starknet_messages.rs` + oracle live). Signer retenu : **JS pur** (`@scure/starknet`), pas de WASM.
  */
 
 // ── Encodage SNIP-12 révision 1 (Poseidon) ───────────────────────────────────────────────────
-// Référence : SNIP-12 (https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-12.md).
-// rev. 1 : `H('StarkNet Message', domain_hash, account, struct_hash)` avec Poseidon.
+// Référence : SNIP-12 (https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-12.md) +
+// `fast_stark_crypto/rust-crypto-lib-base/src/starknet_messages.rs`.
+// rev. 1 : `poseidon('StarkNet Message', domain_hash, public_key, struct_hash)`.
 
 /**
- * Type-hash SNIP-12 : `sn_keccak(typeString)`. Le `typeString` encode la struct et ses champs
- * (ex. `"Order"("position_id":"felt",…)`). **À VALIDER** : la chaîne de type **exacte** des structs
- * `Order`/`TransferArgs`/`WithdrawArgs` du contrat StarkWare Perpetuals doit être confirmée contre la
- * référence (Rust `fast_stark_crypto`). Les constantes {@link TYPE_STRINGS} sont des **placeholders**.
+ * Type-hash SNIP-12 : `sn_keccak(typeString)`. Le `typeString` encode la struct, ses champs **et** les
+ * définitions des types imbriqués référencés (`PositionId`/`AssetId`/`Timestamp`), concaténées dans
+ * l'ordre du contrat StarkWare Perpetuals. Sélecteurs confirmés bit-pour-bit contre les vecteurs de
+ * test Rust (`test_*_selector`).
  */
 function selector(typeName: string): bigint {
   const typeString = TYPE_STRINGS[typeName];
@@ -48,19 +45,20 @@ function selector(typeName: string): bigint {
   return snKeccak(new TextEncoder().encode(typeString));
 }
 
+// Définitions des types imbriqués, appendues à chaque type-string (cf. `starknet_messages.rs`).
+const NESTED_TYPES =
+  '"PositionId"("value":"u32")"AssetId"("value":"felt")"Timestamp"("seconds":"u64")';
+
 /**
- * Chaînes de type SNIP-12 rev-1 (**À VALIDER au bit près**). Le format rev-1 est
- * `"StructName"("field1":"type1","field2":"type2",…)`. Les noms/ordres de champs ci-dessous reflètent
- * le SDK Python (`get_order_msg_hash` &al.) mais les **type-strings canoniques** du contrat
- * StarkWare Perpetuals doivent être confirmés (sinon bascule signer WASM).
+ * Chaînes de type SNIP-12 rev-1 **canoniques** (reproduites depuis les `selector!(…)` Rust de
+ * `starknet_messages.rs`). Format rev-1 : `"Struct"("f1":"t1",…)` suivi des types imbriqués.
  */
 const TYPE_STRINGS: Record<string, string> = {
   StarknetDomain:
     '"StarknetDomain"("name":"shortstring","version":"shortstring","chainId":"shortstring","revision":"shortstring")',
-  Order:
-    '"Order"("position_id":"felt","base_asset_id":"felt","base_amount":"felt","quote_asset_id":"felt","quote_amount":"felt","fee_amount":"felt","fee_asset_id":"felt","expiration":"felt","salt":"felt","user_public_key":"felt")',
-  TransferArgs:
-    '"TransferArgs"("recipient":"felt","position_id":"felt","collateral_id":"felt","amount":"felt","expiration":"felt","salt":"felt","user_public_key":"felt")',
+  Order: `"Order"("position_id":"felt","base_asset_id":"AssetId","base_amount":"i64","quote_asset_id":"AssetId","quote_amount":"i64","fee_asset_id":"AssetId","fee_amount":"u64","expiration":"Timestamp","salt":"felt")${NESTED_TYPES}`,
+  TransferArgs: `"TransferArgs"("recipient":"PositionId","position_id":"PositionId","collateral_id":"AssetId","amount":"u64","expiration":"Timestamp","salt":"felt")${NESTED_TYPES}`,
+  WithdrawArgs: `"WithdrawArgs"("recipient":"ContractAddress","position_id":"PositionId","collateral_id":"AssetId","amount":"u64","expiration":"Timestamp","salt":"felt")${NESTED_TYPES}`,
 };
 
 /** Hash du domaine SNIP-12 rev-1 (`StarknetDomain{name,version,chainId,revision}`). */
@@ -120,9 +118,12 @@ export interface OrderHashInput {
 }
 
 /**
- * Hash d'ordre StarkEx perpetual. **À VALIDER au bit près sur testnet** : l'ordre des champs suit le
- * SDK Python, mais le type-hash SNIP-12 rev-1 et l'envelope finale doivent être confirmés contre la
- * référence Rust/Python (ou bascule WASM).
+ * Hash d'ordre StarkEx perpetual. **Validé bit-pour-bit** contre `get_order_msg_hash`
+ * (`fast_stark_crypto`). Ordre des champs de la struct `Order` (cf. `starknet_messages.rs`) :
+ * `position_id, base_asset_id, base_amount, quote_asset_id, quote_amount, fee_asset_id, fee_amount,
+ * expiration, salt`. La clé publique n'est **pas** dans la struct : elle entre uniquement dans
+ * l'enveloppe SNIP-12. Les montants `i64`/`u64` négatifs (`base_amount`/`quote_amount` selon le sens)
+ * sont réduits mod p par {@link felt} (équivalent `Felt::from(i64)` côté Rust).
  */
 export function hashOrder(input: OrderHashInput, network: Network): bigint {
   const structHash = poseidonHashMany([
@@ -132,11 +133,10 @@ export function hashOrder(input: OrderHashInput, network: Network): bigint {
     felt(input.baseAmount),
     felt(input.quoteAssetId),
     felt(input.quoteAmount),
-    felt(input.feeAmount),
     felt(input.feeAssetId),
+    felt(input.feeAmount),
     felt(input.expiration),
     felt(input.salt),
-    felt(input.userPublicKey),
   ]);
   return snip12Envelope(structHash, input.userPublicKey, network);
 }
@@ -152,17 +152,20 @@ export interface WithdrawalHashInput {
   collateralId: bigint;
 }
 
-/** Hash de retrait StarkEx perpetual. **À VALIDER au bit près sur testnet.** */
+/**
+ * Hash de retrait StarkEx perpetual (struct `WithdrawArgs`). Validé contre `get_withdrawal_msg_hash` :
+ * `recipient(ContractAddress=felt), position_id, collateral_id, amount, expiration, salt`. La clé
+ * publique n'entre que dans l'enveloppe.
+ */
 export function hashWithdrawal(input: WithdrawalHashInput, network: Network): bigint {
   const structHash = poseidonHashMany([
-    selector('TransferArgs'), // ⚠️ nom du type À VALIDER
+    selector('WithdrawArgs'),
     felt(input.recipient),
     felt(input.positionId),
     felt(input.collateralId),
     felt(input.amount),
     felt(input.expiration),
     felt(input.salt),
-    felt(input.userPublicKey),
   ]);
   return snip12Envelope(structHash, input.userPublicKey, network);
 }
@@ -178,7 +181,11 @@ export interface TransferHashInput {
   collateralId: bigint;
 }
 
-/** Hash de transfert StarkEx perpetual. **À VALIDER au bit près sur testnet.** */
+/**
+ * Hash de transfert StarkEx perpetual (struct `TransferArgs`). Validé contre `get_transfer_msg_hash` :
+ * `recipient(PositionId), position_id(PositionId), collateral_id, amount, expiration, salt`. La clé
+ * publique n'entre que dans l'enveloppe.
+ */
 export function hashTransfer(input: TransferHashInput, network: Network): bigint {
   const structHash = poseidonHashMany([
     selector('TransferArgs'),
@@ -188,7 +195,6 @@ export function hashTransfer(input: TransferHashInput, network: Network): bigint
     felt(input.amount),
     felt(input.expiration),
     felt(input.salt),
-    felt(input.userPublicKey),
   ]);
   return snip12Envelope(structHash, input.userPublicKey, network);
 }

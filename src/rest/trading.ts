@@ -2,7 +2,7 @@ import type { ExtendedClient } from '../common/config';
 import { DEFAULT_TAKER_FEE } from '../common/constants';
 import type { ExtendedEnvelope, NativeOrder } from '../common/native';
 import type { Network, Order, Side } from '../common/types';
-import { scaleToStark } from '../common/utils';
+import { scaleProductToStark, scaleToStark } from '../common/utils';
 import { OrderConverter } from '../converters/order';
 import { httpDelete, httpPatch, httpPost } from './client';
 import {
@@ -63,7 +63,9 @@ export interface PlaceOrderInput {
  * Reproduit `create_order_settlement_data` du SDK Python : montant synthétique scalé par
  * `syntheticResolution`, montant collatéral = `size*price` scalé par `collateralResolution`, fee =
  * `taker_fee * collateral`, expiration = `expireTime + 14 j`, signe < 0 selon le sens (BUY ⇒ quote < 0,
- * SELL ⇒ base < 0). **À VALIDER au bit près sur testnet** (cf. `rest/signing.ts`).
+ * SELL ⇒ base < 0). **Validé sur testnet Sepolia** : ordre BTC-USD accepté puis annulé (signature
+ * StarkEx vérifiée par le serveur). Les montants sont calculés en décimal exact (BigInt) — un calcul
+ * flottant dériverait sur le `fee_amount` et casserait la signature (cf. `common/utils.ts`).
  */
 export function buildOrderSettlement(
   input: PlaceOrderInput,
@@ -79,12 +81,17 @@ export function buildOrderSettlement(
   const isBuy = input.side === 'buy';
   const rounding = isBuy ? 'up' : 'down';
   const price = input.price ?? '0';
-  const collateralHuman = (Number(input.size) * Number(price)).toString();
-  const feeHuman = (Number(DEFAULT_TAKER_FEE) * Number(collateralHuman)).toString();
 
+  // Montants scalés en **arithmétique décimale exacte** (cf. `create_order_settlement_data` Python) :
+  // synthetic = size·synRes ; collateral = size·price·colRes ; fee = taker·size·price·colRes. Le
+  // produit reste en BigInt pour reproduire au bit près l'arrondi Python (sinon la signature casse).
   let baseAmount = scaleToStark(input.size, market.syntheticResolution, rounding);
-  let quoteAmount = scaleToStark(collateralHuman, market.collateralResolution, rounding);
-  const feeAmount = scaleToStark(feeHuman, market.collateralResolution, 'up');
+  let quoteAmount = scaleProductToStark([input.size, price], market.collateralResolution, rounding);
+  const feeAmount = scaleProductToStark(
+    [DEFAULT_TAKER_FEE, input.size, price],
+    market.collateralResolution,
+    'up',
+  );
   if (isBuy) {
     quoteAmount = -quoteAmount;
   } else {
