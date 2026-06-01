@@ -1,0 +1,68 @@
+{
+  "name": "@blackcube/extended-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Extended exchange (ex-X10, perpetuals DEX on Starknet/StarkEx): REST v1, WebSocket, SNIP-12 Stark order signing",
+  "license": "BSD-3-Clause",
+  "author": "Blackcube (https://blackcube.io)",
+  "homepage": "https://github.com/blackcubeio/extended-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blackcubeio/extended-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/blackcubeio/extended-sdk/issues"
+  },
+  "keywords": [
+    "extended",
+    "x10",
+    "starknet",
+    "starkex",
+    "perp",
+    "perpetuals",
+    "dex",
+    "trading",
+    "exchange",
+    "sdk",
+    "stark",
+    "websocket"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "sideEffects": false,
+  "files": ["dist", "doc", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "prepublishOnly": "pnpm run lint && pnpm run typecheck && pnpm run build"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.7.0",
+    "@noble/hashes": "^1.6.1",
+    "@scure/starknet": "^1.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
