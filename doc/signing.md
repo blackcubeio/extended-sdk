@@ -1,8 +1,10 @@
 # Signature StarkEx — Extended SDK
 
-> ⚠️ **À VALIDER AU BIT PRÈS SUR TESTNET.** La reproduction JS pure du hash StarkEx perpetual n'a
-> **pas** été confrontée à une signature de référence. Tant que ce n'est pas fait, **ne pas considérer
-> la signature comme correcte** : voir « Statut » en bas et l'option de bascule vers le signer WASM.
+> ✅ **Validé sur testnet réel le 2026-06-01.** La reproduction JS pure du hash StarkEx perpetual
+> (`@scure/starknet`) reproduit `fast_stark_crypto` **au bit près** (vérifié contre les vecteurs Rust) **et**
+> est **acceptée par le serveur testnet** : après corrections (avant : `1101 Invalid StarkEx signature`), un
+> ordre est placé/accepté/annulé (cycle réel). Le signer WASM reste une bascule de secours, mais n'est plus
+> nécessaire pour le trading. Voir « Statut » en bas pour les limites résiduelles.
 
 Extended (ex-X10) est un perp DEX sur **Starknet/StarkEx**. Les écritures (ordres, transferts, retraits)
 sont signées avec une **clé Stark L2** ; l'authentification REST passe par le header `X-Api-Key`
@@ -43,28 +45,35 @@ sont signées avec une **clé Stark L2** ; l'authentification REST passe par le 
 - Scaling entier : `scaleToStark(value, resolution, rounding)` en **BigInt** (pas de flottant), `resolution`
   venant de `l2Config` (`/info/markets`, mis en cache par réseau dans la façade).
 
-### Ce qui reste **à valider** (les inconnues du hash)
+### Ce qui est validé (les inconnues du hash levées le 2026-06-01)
 
-1. **Type-strings SNIP-12** (`TYPE_STRINGS` dans `signing.ts`) : les chaînes de type exactes des structs
-   `Order` / `TransferArgs` / `StarknetDomain` du **contrat StarkWare Perpetuals** (noms et ordre des
-   champs, types `felt`/`shortstring`, `u256` éventuels) doivent être confirmées contre une signature de
-   référence produite par le SDK Python (ou le signer WASM). Les valeurs actuelles sont des
-   **placeholders plausibles**, pas des constantes vérifiées.
-2. **Encodage des montants signés** (felt négatif = `p - x`) et de l'expiration (felt brut).
-3. **Dérivation onboarding** : équivalence `ethSigToPrivate` ↔ `generate_keypair_from_eth_signature`.
+1. **Type-strings SNIP-12** (`TYPE_STRINGS` dans `signing.ts`) : les chaînes de type des structs
+   `Order` / `TransferArgs` / `StarknetDomain` du **contrat StarkWare Perpetuals** sont désormais les
+   **vrais sélecteurs canoniques validés** — **plus des placeholders** : confirmés à la fois contre les
+   vecteurs Rust `fast_stark_crypto` (au bit près) et par l'acceptation serveur d'un ordre testnet.
+2. **Encodage des montants signés** (felt négatif = `p - x`) et de l'expiration (felt brut) : validés.
+3. **Dérivation onboarding** : équivalence `ethSigToPrivate` ↔ `generate_keypair_from_eth_signature`
+   reproduite, mais voir limite résiduelle ci-dessous (flux onboarding/retrait/transfert non exercé réseau).
 
-## Bascule signer WASM (si le hash JS ne reproduit pas la référence)
+## Bascule signer WASM (secours, non requise)
 
-Le code est structuré pour brancher le **signer WASM officiel** `stark-crypto-wrapper-js` (modèle
+Le code reste structuré pour brancher le **signer WASM officiel** `stark-crypto-wrapper-js` (modèle
 Lighter : une instance WASM lazy par réseau, capture des fonctions `Sign*`) **sans changer la surface**
 des fonctions REST (`placeOrder`/`withdraw`/`transfer` prennent un `SigningCtx` ; seul le calcul du hash
-+ `(r,s)` changerait). Si la validation testnet échoue, remplacer `hashOrder`/`signMsgHash` par un
-wrapper WASM (`wasm/` + `setWasmDir`) et conserver `scaleToStark` / la construction du body.
++ `(r,s)` changerait). Le hash JS pur étant validé, cette bascule n'est **plus nécessaire** pour le
+trading ; elle reste disponible (`wasm/` + `setWasmDir`) en cas de besoin futur.
 
 ## Statut
 
-- **Scaling, ordre des champs, buffers d'expiration, signes BUY/SELL, domaine SNIP-12** : repris
-  fidèlement du SDK Python.
-- **Type-hashes SNIP-12 + enveloppe finale** : implémentés en JS pur, **non confrontés** à une référence.
-- **Conclusion** : signature **NON validée** ; à confronter au bit près sur testnet (ou WASM) avant tout
-  usage réel.
+- **Validé sur testnet réel le 2026-06-01** — signature **ordre** : reproduit `fast_stark_crypto` au bit
+  près (vecteurs Rust) **et** acceptée par le serveur (ordre placé/accepté/annulé, cycle réel).
+- **Scaling, ordre des champs, buffers d'expiration, signes BUY/SELL, domaine SNIP-12, type-hashes
+  SNIP-12 + enveloppe finale** : implémentés en JS pur et validés (vecteurs + serveur).
+
+### Limites résiduelles honnêtes
+
+- **Retrait** (`get_withdrawal_msg_hash`) et **transfert** (`get_transfer_msg_hash`) : validés **contre les
+  vecteurs** `fast_stark_crypto`, mais **non exercés sur le réseau** (pas de retrait/transfert effectué
+  testnet dans ce cycle).
+- **Onboarding** (`deriveL2Key` / `ethSigToPrivate`) : équivalence reproduite, **non exercée réseau**
+  (dérivation testée localement, pas de création de compte sur le serveur).

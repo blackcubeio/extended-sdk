@@ -23,7 +23,7 @@ await dex.account().getPositions();
 
 ## Surface
 
-- **Commun** (portable, identique aux autres SDK) : `perp()` / `spot()` / `account()` / `transfers()` / `ws()`.
+- **Commun** (portable, identique aux autres SDK) : `perp()` / `account()` / `transfers()` / `ws()`. Extended est **perp-only** (*absent : `spot()`*).
 - **Natif** (spécifique Extended) : `native.<capacité>()` (sous-comptes, vault de rendement, builder codes, …).
 
 ## Spécificités Extended
@@ -31,7 +31,8 @@ await dex.account().getPositions();
 - **Auth** : `X-Api-Key` (lecture) + **signature Stark SNIP-12** sur le settlement des écritures
   (ordres/transferts/retraits). `User-Agent` **obligatoire** (REST et WS). Onboarding EIP-712 → keypair L2 Stark.
 - **Signature** : hash StarkEx perpetual (`get_order_msg_hash`) ; scaling entier via `l2Config` de `/info/markets`.
-  Signer JS pur (`@scure/starknet`) **à valider au bit près sur testnet**, sinon signer WASM officiel.
+  Signer JS pur (`@scure/starknet`) **validé sur testnet réel (2026-06-01)** : reproduit `fast_stark_crypto`
+  au bit près et accepté par le serveur (ordre placé/accepté/annulé). Signer WASM officiel disponible en secours.
 - **WebSocket** : souscription **par path** (1 channel = 1 connexion, SNAPSHOT/DELTA). Kill-switch via `auto-cancel`.
 - Marchés : symbole hyphené `BTC-USD`.
 

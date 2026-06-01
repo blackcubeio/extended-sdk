@@ -10,8 +10,9 @@ Onboarding StarkEx (dérivation de la keypair Stark L2).
 - `deriveL2Key({ ethSignature })` → `{ privateKey, publicKey }`. Dérive la clé Stark L2 depuis une
   **signature EIP-712** (`AccountCreation{accountIndex,wallet,tosAccepted}`, domaine
   `EIP712Domain{name = signing_domain}`) produite par le **wallet L1** (hors SDK). Repose sur
-  `ethSigToPrivate` (`@scure/starknet`). **À VALIDER** : équivalence avec
-  `generate_keypair_from_eth_signature` du SDK Python officiel.
+  `ethSigToPrivate` (`@scure/starknet`). Équivalence avec `generate_keypair_from_eth_signature` du SDK
+  Python officiel **reproduite** (validée localement) ; **limite résiduelle** : flux onboarding **non
+  exercé sur le réseau** (pas de création de compte serveur dans le cycle de validation du 2026-06-01).
 
 Helpers libres exportés en complément : `l2KeyFromEthSignature`, `onboardingL2MessageHash`
 (`pedersen(l1Address, l2PublicKey)`), `starkPublicKey`.
