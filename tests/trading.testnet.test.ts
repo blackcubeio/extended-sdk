@@ -71,12 +71,14 @@ describe.skipIf(!ready)('Extended — ordre signé StarkEx accepté puis annulé
     const perp = dex.perp();
     const name = 'BTC-USD';
 
-    // Prix loin sous le marché (~50 % du mid) : un buy postOnly ne fill jamais.
+    // Prix sous le marché mais **dans la bande de prix** : BTC-USD impose `limitPriceFloor=0.05`
+    // (un buy limit > 5 % sous la réf est rejeté/annulé d'office). On vise ~4 % sous le mark, arrondi
+    // au pas `minPriceChange=0.1` ; un buy postOnly à ce prix repose comme meilleur bid sans filler.
     const prices = await perp.getPrices();
     const market = prices.find((p) => p.name === name);
     const mid = Number(market?.mark ?? market?.mid ?? '0');
     expect(mid).toBeGreaterThan(0);
-    const farPrice = String(Math.floor((mid * 0.5) / 10) * 10); // arrondi au pas (0.1) large
+    const farPrice = String(Math.round((mid * 0.96) / 0.1) * 0.1);
     const size = '0.0001'; // minOrderSize BTC-USD
 
     let order: Awaited<ReturnType<typeof perp.place>> | undefined;

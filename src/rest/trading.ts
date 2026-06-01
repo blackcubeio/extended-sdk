@@ -166,7 +166,11 @@ export function placeOrder(
     timeInForce: tif,
     expiryEpochMillis: expireTimeMs,
     fee: DEFAULT_TAKER_FEE,
-    nonce,
+    // Champ **requis** par l'API (cf. `NewOrderModel.self_trade_protection_level`, défaut ACCOUNT) ;
+    // son absence fait silencieusement rejeter l'ordre côté moteur (200 mais jamais dans le compte).
+    selfTradeProtectionLevel: 'ACCOUNT',
+    // `nonce` sérialisé en **chaîne** (Decimal côté Python) — un grand salt > 2^53 perdrait sa précision.
+    nonce: String(nonce),
     settlement,
     debuggingAmounts: debugging,
   };

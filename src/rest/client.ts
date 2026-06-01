@@ -97,6 +97,39 @@ function parseEnvelope<T>(response: Response): Promise<ExtendedEnvelope<T>> {
   });
 }
 
+/**
+ * Détecte le **404 « nu »** que renvoie par intermittence le pool d'origine testnet Extended sur les
+ * écritures `/user/order*` : statut 404, **corps vide** (ni enveloppe JSON ni en-têtes CloudFront). Ce
+ * n'est pas un « resource not found » applicatif — seule une fraction des instances d'origine porte la
+ * route, donc la même requête signée réussit (200) après quelques essais. On le distingue d'un vrai 404
+ * applicatif (qui, lui, porte une enveloppe `{error}`) par l'absence de `code` et un message vide/HTTP brut.
+ */
+function isFlakyEdge404(error: unknown): boolean {
+  return (
+    error instanceof ExtendedApiError &&
+    error.status === 404 &&
+    error.code === null &&
+    /^(HTTP 404)?$/.test(error.message.trim())
+  );
+}
+
+/** Rejoue `attempt()` tant que l'origine renvoie le 404 nu intermittent (cf. {@link isFlakyEdge404}). */
+async function retryFlakyEdge<T>(attempt: () => Promise<T>, max = 40, delayMs = 200): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < max; i++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (isFlakyEdge404(error) === false) {
+        throw error;
+      }
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
+
 /** Lecture (publique ou authentifiée). `apiKey` ajoute `X-Api-Key` ; `label` choisit le réseau. */
 export function httpGet<T>(
   client: ExtendedClient,
@@ -120,9 +153,12 @@ export function httpPost<T>(
   label?: string,
 ): Promise<ExtendedEnvelope<T>> {
   const url = buildUrl(client.restUrls[resolveReadNetwork(client, label)], path);
-  return client
-    .fetch(url, { method: 'POST', headers: headers(apiKey, true), body: JSON.stringify(body) })
-    .then((r) => parseEnvelope<T>(r));
+  const serialized = JSON.stringify(body);
+  return retryFlakyEdge(() =>
+    client
+      .fetch(url, { method: 'POST', headers: headers(apiKey, true), body: serialized })
+      .then((r) => parseEnvelope<T>(r)),
+  );
 }
 
 /** Variante PATCH (ex. levier). */
@@ -134,9 +170,12 @@ export function httpPatch<T>(
   label?: string,
 ): Promise<ExtendedEnvelope<T>> {
   const url = buildUrl(client.restUrls[resolveReadNetwork(client, label)], path);
-  return client
-    .fetch(url, { method: 'PATCH', headers: headers(apiKey, true), body: JSON.stringify(body) })
-    .then((r) => parseEnvelope<T>(r));
+  const serialized = JSON.stringify(body);
+  return retryFlakyEdge(() =>
+    client
+      .fetch(url, { method: 'PATCH', headers: headers(apiKey, true), body: serialized })
+      .then((r) => parseEnvelope<T>(r)),
+  );
 }
 
 /** Suppression signée (ex. cancel order ; corps optionnel). */
@@ -153,5 +192,5 @@ export function httpDelete<T>(
   if (body !== undefined) {
     init.body = JSON.stringify(body);
   }
-  return client.fetch(url, init).then((r) => parseEnvelope<T>(r));
+  return retryFlakyEdge(() => client.fetch(url, init).then((r) => parseEnvelope<T>(r)));
 }
