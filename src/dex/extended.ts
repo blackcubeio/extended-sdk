@@ -60,7 +60,6 @@ import type {
   IProductAccount,
   IPublicTrades,
   IRealtime,
-  IRealtimeAllCandles,
   IRealtimePositions,
   ITrading,
   ITransfers,
@@ -343,7 +342,7 @@ class ExtendedTransfers extends Scope implements ITransfers {
 }
 
 /** Scope **temps réel** : Extended a un flux `/account` → implémente `IRealtimePositions`. */
-class ExtendedRealtime implements IRealtime, IRealtimePositions, IRealtimeAllCandles {
+class ExtendedRealtime implements IRealtime, IRealtimePositions {
   constructor(
     private readonly ws: UnifiedWsClient,
     private readonly label: string | undefined,
