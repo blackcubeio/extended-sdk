@@ -189,6 +189,15 @@ export interface IRealtime {
   subscribeUserTrades(cb: (t: UserTrade) => void): Unsubscribe;
 }
 
+/**
+ * Souscription « tout le marché » en UNE connexion : bougies 1m de TOUS les symboles reconstruites depuis le flux
+ * de prix agrégé (close exact ; OHLC échantillonné ; volume non fourni par le flux agrégé → `0`). Évite N
+ * souscriptions `@candle` (cap/throttle par connexion + crawl de re-souscription au reconnect). API uniforme sur les DEX.
+ */
+export interface IRealtimeAllCandles {
+  subscribeAllCandles(cb: (c: Candle) => void): Unsubscribe;
+}
+
 /** Souscription aux positions (Extended a un flux `/account`). */
 export interface IRealtimePositions {
   subscribePositions(cb: (p: Position) => void): Unsubscribe;

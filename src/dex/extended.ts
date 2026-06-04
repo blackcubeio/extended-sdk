@@ -60,6 +60,7 @@ import type {
   IProductAccount,
   IPublicTrades,
   IRealtime,
+  IRealtimeAllCandles,
   IRealtimePositions,
   ITrading,
   ITransfers,
@@ -342,12 +343,29 @@ class ExtendedTransfers extends Scope implements ITransfers {
 }
 
 /** Scope **temps réel** : Extended a un flux `/account` → implémente `IRealtimePositions`. */
-class ExtendedRealtime implements IRealtime, IRealtimePositions {
+class ExtendedRealtime implements IRealtime, IRealtimePositions, IRealtimeAllCandles {
   constructor(
     private readonly ws: UnifiedWsClient,
     private readonly label: string | undefined,
     private readonly client: ExtendedClient,
   ) {}
+
+  // Bougies 1m de tout le marché en UNE méthode. Extended n'a pas de flux prix agrégé exploitable (mark-price
+  // muet en lecture publique) → on fan-out en INTERNE sur subscribeCandles@1m de chaque marché perp (chemin éprouvé).
+  // API uniforme sur les DEX ; l'appelant filtre côté collecteur sur ses paires suivies.
+  public subscribeAllCandles(cb: (c: Candle) => void) {
+    return deferredSubscribe(async () => {
+      const pairs = await getPairs(this.client, this.label);
+      const unsubs = pairs
+        .filter((p) => p.kind === 'perp')
+        .map((p) => this.subscribeCandles({ name: p.name, interval: '1m' }, cb));
+      return () => {
+        for (const u of unsubs) {
+          u();
+        }
+      };
+    });
+  }
 
   private apiKey(): string {
     const signer = this.label !== undefined ? this.client.signers[this.label] : undefined;
