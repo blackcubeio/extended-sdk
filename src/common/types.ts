@@ -63,6 +63,27 @@ export interface FundingParams {
 export interface SymbolParams {
   name: string;
 }
+/** Un take-profit partiel d'une protection (déclenchement + taille ; `price` = borne d'exécution). */
+export interface ProtectionTp {
+  triggerPrice: string;
+  size: string;
+  /** Prix limite/borne de l'ordre déclenché (HL l'exige ; Aster l'ignore — conditionnel market). */
+  price?: string;
+}
+
+/**
+ * Entrée `placeProtection` : SL plein + N TPs partiels (reduce-only) sur une position EXISTANTE.
+ * `side` = sens de la POSITION (les ordres sont posés au sens OPPOSÉ). Tailles + `price` (borne)
+ * fournis par l'appelant — pas de recalcul interne (anti-résidu garanti côté appelant).
+ */
+export interface PlaceProtectionParams {
+  name: string;
+  side: Side;
+  sl: { triggerPrice: string; size: string; price?: string };
+  tps: ProtectionTp[];
+  clientId?: string;
+}
+
 export interface PlaceOrderParams {
   name: string;
   side: Side;

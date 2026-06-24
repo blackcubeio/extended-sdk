@@ -12,6 +12,7 @@ import type {
   Pair,
   Position,
   Price,
+  Side,
   Signer,
   Trade,
   UserTrade,
@@ -66,6 +67,8 @@ import type {
   LeverageParams,
   OrderBookParams,
   PlaceOrderParams,
+  PlaceProtectionParams,
+  ProtectionTp,
   SymbolParams,
   TradesParams,
   TransferParams,
@@ -278,6 +281,40 @@ class ExtendedMarket
       this.label,
     );
     return { cancelled: null };
+  }
+  // Protection d'une position : SL plein + N TPs partiels, tous reduce-only, posés en un lot (N
+  // ordres conditionnels natifs Extended : `stopMarket` → CONDITIONAL, `takeProfitMarket` → TPSL,
+  // `triggerPrice` porté par chaque leg). `side` = sens de la POSITION → ordres au sens OPPOSÉ.
+  // `price` (borne) fourni par l'appelant, sinon conditionnel marché. Pas de recalcul de taille.
+  public placeProtection(input: PlaceProtectionParams): Promise<Order[]> {
+    const exit: Side = input.side === 'buy' ? 'sell' : 'buy';
+    const legs: PlaceOrderParams[] = [
+      {
+        name: input.name,
+        side: exit,
+        type: 'stopMarket',
+        triggerPrice: input.sl.triggerPrice,
+        size: input.sl.size,
+        price: input.sl.price,
+        reduceOnly: true,
+      },
+      ...input.tps.map(
+        (tp: ProtectionTp): PlaceOrderParams => ({
+          name: input.name,
+          side: exit,
+          type: 'takeProfitMarket',
+          triggerPrice: tp.triggerPrice,
+          size: tp.size,
+          price: tp.price,
+          reduceOnly: true,
+        }),
+      ),
+    ];
+    return Promise.all(legs.map((leg) => this.place(leg)));
+  }
+  // Annule toute la protection de la paire (conditionnels reduce-only) avant de la re-poser.
+  public cancelProtection(input: { name: string }): Promise<void> {
+    return this.cancelAll({ name: input.name }).then(() => undefined);
   }
   public async edit(input: EditOrderParams): Promise<{ name: string; id: string }> {
     // Extended : édition = nouveau place avec `cancelId` (remplacement). On relit l'état ensuite.
