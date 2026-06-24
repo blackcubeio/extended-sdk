@@ -1,6 +1,6 @@
 {
   "name": "@blackcube/extended-sdk",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "TypeScript SDK for the Extended exchange (ex-X10, perpetuals DEX on Starknet/StarkEx): REST v1, WebSocket, SNIP-12 Stark order signing",
   "license": "BSD-3-Clause",
   "author": "Blackcube (https://blackcube.io)",
@@ -38,7 +38,12 @@
     }
   },
   "sideEffects": false,
-  "files": ["dist", "doc", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "doc",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22"
   },
