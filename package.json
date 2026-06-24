@@ -38,12 +38,7 @@
     }
   },
   "sideEffects": false,
-  "files": [
-    "dist",
-    "doc",
-    "README.md",
-    "LICENSE"
-  ],
+  "files": ["dist", "doc", "README.md", "LICENSE"],
   "engines": {
     "node": ">=22"
   },
