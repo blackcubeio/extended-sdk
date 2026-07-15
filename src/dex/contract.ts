@@ -111,11 +111,47 @@ export interface IPublicTrades {
   getTrades(query: TradesParams): Promise<Trade[]>;
 }
 
+/** Un take-profit partiel d'une protection (déclenchement + taille ; `price` = borne d'exécution). */
+export interface ProtectionTp {
+  triggerPrice: string;
+  size: string;
+  price?: string;
+}
+
+/**
+ * Entrée `placeProtection` : pose, sur une position EXISTANTE, un stop-loss plein + N take-profits
+ * partiels (reduce-only). `side` = sens de la POSITION ; les ordres sont posés au sens OPPOSÉ. Les
+ * tailles sont fournies par l'appelant (somme des TPs = couvert ; le SL couvre le restant) — pas de
+ * recalcul interne → c'est l'appelant qui garantit l'absence de résidu.
+ */
+export interface PlaceProtectionParams {
+  name: string;
+  side: 'buy' | 'sell';
+  sl: { triggerPrice: string; size: string; price?: string };
+  tps: ProtectionTp[];
+  clientId?: string;
+}
+
 /** Placement/annulation/édition d'ordres + levier. */
 export interface ITrading {
   place(input: PlaceOrderParams): Promise<Order>;
   cancel(input: CancelOrderParams): Promise<void>;
   cancelAll(input: CancelAllParams): Promise<{ cancelled: number | null }>;
+  /**
+   * Pose SL + N TPs (reduce-only) sur une position EXISTANTE, en un lot. Mécanisme natif par DEX.
+   */
+  placeProtection(input: PlaceProtectionParams): Promise<Order[]>;
+  /**
+   * Ouvre une position AVEC sa protection : entrée + SL + N TPs. Atomique quand la venue expose un lot,
+   * sinon legs successifs. Le premier `Order` retourné = l'entrée ; `entry.side` = sens de la position,
+   * `protection.side` = idem (legs opposés).
+   */
+  createEntryWithProtection(
+    entry: PlaceOrderParams,
+    protection: PlaceProtectionParams,
+  ): Promise<Order[]>;
+  /** Annule la protection (SL/TPs reduce-only) de la paire — à appeler avant de la re-poser. */
+  cancelProtection(input: { name: string }): Promise<void>;
   /**
    * Modifie un ordre et renvoie `{ name, id }`. Extended traite l'édition comme un place avec
    * `cancelId` (remplacement) ; l'état complet doit être relu (`getOpens`).
