@@ -141,6 +141,15 @@ export interface ITrading {
    * Pose SL + N TPs (reduce-only) sur une position EXISTANTE, en un lot. Mécanisme natif par DEX.
    */
   placeProtection(input: PlaceProtectionParams): Promise<Order[]>;
+  /**
+   * Ouvre une position AVEC sa protection : entrée + SL + N TPs. Atomique quand la venue expose un lot,
+   * sinon legs successifs. Le premier `Order` retourné = l'entrée ; `entry.side` = sens de la position,
+   * `protection.side` = idem (legs opposés).
+   */
+  createEntryWithProtection(
+    entry: PlaceOrderParams,
+    protection: PlaceProtectionParams,
+  ): Promise<Order[]>;
   /** Annule la protection (SL/TPs reduce-only) de la paire — à appeler avant de la re-poser. */
   cancelProtection(input: { name: string }): Promise<void>;
   /**
